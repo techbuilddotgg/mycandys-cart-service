@@ -2,6 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const productService = require('./productService');
+const Cart = require('./cartModel');
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
 
 dotenv.config();
 
@@ -11,33 +14,42 @@ const port = process.env.PORT || 3000;
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI, { dbName: 'db_carts' });
 
-// Schema for the shopping cart
-const cartSchema = new mongoose.Schema({
-    userId: String,
-    items: [
-        {
-            productId: String,
-            name: String,
-            price: Number,
-            imgUrl: String,
-            quantity: {
-                type: Number,
-                default: 1,
-            },
-        },
-    ],
-    fullPrice: {
-        type: Number,
-        default: 0,
-    },
-});
-
-const Cart = mongoose.model('Cart', cartSchema);
-
 const userId = "1"; // Hardcoded userId for testing
 const { getProductDetails } = productService;
 
+// Swagger options
+const swaggerOptions = {
+    definition: {
+        openapi: '3.0.0',
+        info: {
+            title: 'Cart API',
+            version: '1.0.0',
+            description: 'API documentation for managing user cart.',
+        },
+        servers: [
+            {
+                url: `http://localhost:${port}`,
+            },
+        ],
+    },
+    apis: ['index.js'],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 // Get the items in the user's cart with product details
+/**
+ * @swagger
+ * /cart:
+ *   get:
+ *     summary: Get the items in the user's cart with product details
+ *     responses:
+ *       '200':
+ *         description: Successful response with the user's cart
+ *       '500':
+ *         description: Internal Server Error
+ */
 app.get('/cart', async (req, res) => {
     try {
         const cart = await Cart.findOne({ userId });
@@ -48,6 +60,26 @@ app.get('/cart', async (req, res) => {
 });
 
 // Add a product to the user's cart
+/**
+ * @swagger
+ * /cart/add/{productId}:
+ *   post:
+ *     summary: Add a product to the user's cart
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         description: ID of the product to be added
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: Successful response with the updated cart
+ *       '404':
+ *         description: Product not found
+ *       '500':
+ *         description: Internal Server Error
+ */
 app.post('/cart/add/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
@@ -129,6 +161,26 @@ app.put('/cart/update/:productId', async (req, res) => {
 });
 
 // Remove a product from the user's cart completely
+/**
+ * @swagger
+ * /cart/delete/{productId}:
+ *   delete:
+ *     summary: Remove a product from the user's cart completely
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         description: ID of the product to be removed
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: Successful response with the updated cart
+ *       '404':
+ *         description: Product not found in the cart
+ *       '500':
+ *         description: Internal Server Error
+ */
 app.delete('/cart/delete/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
@@ -160,6 +212,26 @@ app.delete('/cart/delete/:productId', async (req, res) => {
 });
 
 // Decrease the quantity of a product in the cart
+/**
+ * @swagger
+ * /cart/remove/{productId}:
+ *   delete:
+ *     summary: Decrease the quantity of a product in the cart
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         description: ID of the product to decrease the quantity
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: Successful response with the updated cart
+ *       '404':
+ *         description: Product not found in the cart
+ *       '500':
+ *         description: Internal Server Error
+ */
 app.delete('/cart/remove/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
@@ -183,12 +255,14 @@ app.delete('/cart/remove/:productId', async (req, res) => {
                 existingItem.quantity -= 1;
                 // Update fullPrice based on the decreased quantity
                 cart.fullPrice -= product.price;
+                cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
                 await cart.save();
                 res.status(200).json(cart);
             } else {
                 // If quantity is 1, remove the product from the cart
                 // Update fullPrice based on the removed item
                 cart.fullPrice -= product.price;
+                cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
                 cart.items = cart.items.filter(item => item.productId !== productId);
                 await cart.save();
                 res.status(200).json(cart);
@@ -202,6 +276,19 @@ app.delete('/cart/remove/:productId', async (req, res) => {
 });
 
 // Clear all items from the user's cart
+/**
+ * @swagger
+ * /cart/clear:
+ *   delete:
+ *     summary: Clear all items from the user's cart
+ *     responses:
+ *       '200':
+ *         description: Successful response with the cleared cart
+ *       '404':
+ *         description: Cart not found
+ *       '500':
+ *         description: Internal Server Error
+ */
 app.delete('/cart/clear', async (req, res) => {
     try {
         const cart = await Cart.findOne({ userId });
@@ -216,6 +303,33 @@ app.delete('/cart/clear', async (req, res) => {
         cart.items = [];
         await cart.save();
         res.status(200).json(cart);
+    } catch (error) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+/**
+ * @swagger
+ * /cart/delete:
+ *   delete:
+ *     summary: Delete the entire shopping cart.
+ *     responses:
+ *       200:
+ *         description: Successful response when the cart is deleted.
+ *       404:
+ *         description: Cart not found.
+ *       500:
+ *         description: Internal Server Error.
+ */
+app.delete('/cart/delete', async (req, res) => {
+    try {
+        const cart = await Cart.findOneAndDelete({ userId });
+
+        if (!cart) {
+            return res.status(404).json({ error: 'Cart not found' });
+        }
+
+        res.status(200).json({ message: 'Cart deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: 'Internal Server Error' });
     }
