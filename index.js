@@ -38,6 +38,27 @@ const swaggerOptions = {
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Check if the service is running.
+ *     responses:
+ *       200:
+ *         description: Service is running.
+ *       500:
+ *         description: Service is not running.
+ */
+app.get('/health', (req, res) => {
+    try {
+        // You can add more sophisticated health-check logic here if needed
+        res.status(200).json({ status: 'Service is running' });
+    } catch (error) {
+        res.status(500).json({ error: 'Service is not running' });
+    }
+});
+
+
 // Get the items in the user's cart with product details
 /**
  * @swagger
@@ -95,27 +116,32 @@ app.post('/cart/add/:productId', async (req, res) => {
 
         // Fetch product details from the products microservice
         const product = await getProductDetails(productId);
-
         if (!product) {
             return res.status(404).json({ error: 'Product not found' });
         }
 
         const existingItem = cart.items.find(item => item.productId === productId);
+        let price;
 
         if (existingItem) {
             existingItem.quantity += 1;
+            cart.fullPrice += existingItem.price;
+            cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
         } else {
+            // Calculate the price based on the presence of discount
+            price = product.temporaryPrice !== -1 ? product.temporaryPrice : product.originalPrice;
             cart.items.push({
                 productId: product._id,
                 name: product.name,
-                price: product.price,
+                price: price, // Use temporaryPrice if not -1, otherwise use originalPrice
                 imgUrl: product.imgUrl,
                 quantity: 1,
             });
         }
 
         // Update the fullPrice of the cart based on the added item
-        cart.fullPrice += product.price;
+        cart.fullPrice += price;
+        cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
 
         await cart.save();
         res.status(200).json(cart);
@@ -126,6 +152,35 @@ app.post('/cart/add/:productId', async (req, res) => {
 });
 
 // Update the quantity of a product in the cart
+/**
+ * @swagger
+ * /cart/update/{productId}:
+ *   put:
+ *     summary: Update the quantity of a product in the cart.
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         description: The ID of the product to update in the cart.
+ *         schema:
+ *           type: string
+ *       - in: body
+ *         name: quantity
+ *         required: true
+ *         description: The new quantity of the product in the cart.
+ *         schema:
+ *           type: object
+ *           properties:
+ *             quantity:
+ *               type: integer
+ *     responses:
+ *       200:
+ *         description: Successful update. Returns the updated cart.
+ *       404:
+ *         description: Cart, product, or product in the cart not found.
+ *       500:
+ *         description: Internal Server Error.
+ */
 app.put('/cart/update/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
@@ -148,6 +203,7 @@ app.put('/cart/update/:productId', async (req, res) => {
         if (existingItem) {
             // Update fullPrice based on the change in quantity
             cart.fullPrice += (quantity - existingItem.quantity) * product.price;
+            cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
             existingItem.quantity = quantity;
 
             await cart.save();
@@ -200,7 +256,8 @@ app.delete('/cart/delete/:productId', async (req, res) => {
         // Update fullPrice based on the removed item
         const removedItem = cart.items.find(item => item.productId === productId);
         if (removedItem) {
-            cart.fullPrice -= removedItem.quantity * product.price;
+            cart.fullPrice -= removedItem.quantity * removedItem.price;
+            cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
         }
 
         cart.items = cart.items.filter(item => item.productId !== productId);
@@ -254,14 +311,14 @@ app.delete('/cart/remove/:productId', async (req, res) => {
             if (existingItem.quantity > 1) {
                 existingItem.quantity -= 1;
                 // Update fullPrice based on the decreased quantity
-                cart.fullPrice -= product.price;
+                cart.fullPrice -= existingItem.price;
                 cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
                 await cart.save();
                 res.status(200).json(cart);
             } else {
                 // If quantity is 1, remove the product from the cart
                 // Update fullPrice based on the removed item
-                cart.fullPrice -= product.price;
+                cart.fullPrice -= existingItem.price;
                 cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
                 cart.items = cart.items.filter(item => item.productId !== productId);
                 await cart.save();
