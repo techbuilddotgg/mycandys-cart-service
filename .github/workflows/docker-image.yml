@@ -1,0 +1,41 @@
+name: Docker Image CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Get Latest Tag
+        id: get_tag
+        run: |
+          TAG=$(git describe --abbrev=0)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Set Default Tag If Missing
+        if: steps.get_tag.outcome != 'success'
+        run: |
+          echo "TAG=v1.0.0" >> $GITHUB_ENV
+
+      - name: Docker Login
+        env:
+          DOCKER_USER: ${{secrets.DOCKER_USER}}
+          DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
+        run: |
+          docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+
+      - name: Docker Build
+        run: docker build . --file Dockerfile --tag ${{secrets.DOCKER_REPO}}/${{secrets.DOCKER_IMAGE}}:$TAG
+
+      - name: DockerHub Push
+        run: docker push ${{secrets.DOCKER_REPO}}/${{secrets.DOCKER_IMAGE}}:$TAG
