@@ -43,6 +43,22 @@ const swaggerOptions = {
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+// Middleware to verify the JWT token
+const verifyToken = async (req, res, next) => {
+    try {
+        const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/auth/verify`, {
+            headers: {
+                Authorization: req.headers.authorization,
+                Host: req.headers.host,
+            },
+        });
+        req.userId = response.data.userId;
+    } catch (error) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+};
+
 /**
  * @swagger
  * /health:
@@ -76,7 +92,7 @@ app.get('/health', (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.get('/cart', async (req, res) => {
+app.get('/carts', async (req, res) => {
     try {
         const cart = await Cart.findOne({ userId });
         res.status(200).json(cart);
@@ -106,7 +122,7 @@ app.get('/cart', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.post('/cart/add/:productId', async (req, res) => {
+app.post('/carts/add/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
         let cart = await Cart.findOne({ userId });
@@ -186,7 +202,7 @@ app.post('/cart/add/:productId', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-app.put('/cart/update/:productId', async (req, res) => {
+app.put('/carts/update/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
         const { quantity } = req.body;
@@ -242,7 +258,7 @@ app.put('/cart/update/:productId', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.delete('/cart/delete/:productId', async (req, res) => {
+app.delete('/carts/delete/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
         const cart = await Cart.findOne({ userId });
@@ -294,7 +310,7 @@ app.delete('/cart/delete/:productId', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.delete('/cart/remove/:productId', async (req, res) => {
+app.delete('/carts/remove/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
         const cart = await Cart.findOne({ userId });
@@ -351,7 +367,7 @@ app.delete('/cart/remove/:productId', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.delete('/cart/clear', async (req, res) => {
+app.delete('/carts/clear', async (req, res) => {
     try {
         const cart = await Cart.findOne({ userId });
 
@@ -370,6 +386,7 @@ app.delete('/cart/clear', async (req, res) => {
     }
 });
 
+// Delete the entire shopping cart
 /**
  * @swagger
  * /cart/delete:
@@ -383,7 +400,7 @@ app.delete('/cart/clear', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-app.delete('/cart/delete', async (req, res) => {
+app.delete('/carts/delete', async (req, res) => {
     try {
         const cart = await Cart.findOneAndDelete({ userId });
 
@@ -396,16 +413,6 @@ app.delete('/cart/delete', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
-
-const verifyToken = async (req, res, next) => {
-    try {
-        const response = await axios.get(`http://localhost:3000/auth/verify`, { headers: {
-                'Authorization': bearerToken
-            }});
-        req.userId = response.data.userId
-    } catch (error) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }};
 
 // Start the server
 app.listen(port, () => {
