@@ -15,11 +15,12 @@ const port = process.env.PORT || 3000;
 
 // Enable CORS for all routes
 app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI, { dbName: 'db_carts' });
 
-const userId = "1"; // Hardcoded userId for testing
 const { getProductDetails } = productService;
 
 // Swagger options
@@ -52,7 +53,6 @@ const verifyToken = async (req, res, next) => {
                 Host: req.headers.host,
             },
         });
-        req.userId = response.data.userId;
     } catch (error) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -80,34 +80,54 @@ app.get('/health', (req, res) => {
 });
 
 
-// Get the items in the user's cart with product details
+// Get the items in the cart with product details
 /**
  * @swagger
- * /cart:
+ * /carts/{cartId}:
  *   get:
- *     summary: Get the items in the user's cart with product details
+ *     summary: Get the items in the cart with product details
+ *     parameters:
+ *       - in: path
+ *         name: cartId
+ *         required: true
+ *         description: ID of the user's cart
+ *         schema:
+ *           type: string
  *     responses:
  *       '200':
  *         description: Successful response with the user's cart
  *       '500':
  *         description: Internal Server Error
  */
-app.get('/carts', async (req, res) => {
+app.get('/carts/:cartId', async (req, res) => {
     try {
-        const cart = await Cart.findOne({ userId });
+        const { cartId } = req.params;
+        const cart = await Cart.findOne({ _id: cartId });
+
+        if (!cart) {
+            return res.status(404).json({ error: 'Cart not found' });
+        }
+
         res.status(200).json(cart);
     } catch (error) {
+        console.log(error)
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
-// Add a product to the user's cart
+// Add a product to the cart
 /**
  * @swagger
- * /cart/add/{productId}:
+ * /carts/{cartId}/products/{productId}:
  *   post:
  *     summary: Add a product to the user's cart
  *     parameters:
+ *       - in: path
+ *         name: cartId
+ *         required: true
+ *         description: ID of the user's cart
+ *         schema:
+ *           type: string
  *       - in: path
  *         name: productId
  *         required: true
@@ -122,14 +142,14 @@ app.get('/carts', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.post('/carts/add/:productId', async (req, res) => {
+app.post('/carts/:cartId/products/:productId', async (req, res) => {
     try {
-        const { productId } = req.params;
-        let cart = await Cart.findOne({ userId });
+        const { cartId, productId } = req.params;
+        let cart = await Cart.findOne({ _id: cartId });
 
         // If the user doesn't have a cart, create a new one
         if (!cart) {
-            const newCart = new Cart({ userId, items: [], fullPrice: 0 });
+            const newCart = new Cart({ items: [], fullPrice: 0 });
             await newCart.save();
             // Assign the newly created cart to the 'cart' variable
             cart = newCart;
@@ -175,10 +195,20 @@ app.post('/carts/add/:productId', async (req, res) => {
 // Update the quantity of a product in the cart
 /**
  * @swagger
- * /cart/update/{productId}:
+ * /carts/{cartId}/products/{productId}:
  *   put:
  *     summary: Update the quantity of a product in the cart.
+ *     consumes:
+ *       - application/json
+ *     produces:
+ *       - application/json
  *     parameters:
+ *       - in: path
+ *         name: cartId
+ *         required: true
+ *         description: The ID of the user's cart.
+ *         schema:
+ *           type: string
  *       - in: path
  *         name: productId
  *         required: true
@@ -202,11 +232,16 @@ app.post('/carts/add/:productId', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-app.put('/carts/update/:productId', async (req, res) => {
+app.put('/carts/:cartId/products/:productId', async (req, res) => {
     try {
-        const { productId } = req.params;
+        const { cartId, productId } = req.params;
         const { quantity } = req.body;
-        const cart = await Cart.findOne({ userId });
+        console.log(req.body);
+        const cart = await Cart.findOne({ _id: cartId });
+
+        if(quantity < 1) {
+            return res.status(400).json({ error: 'Quantity cannot be less than 1' });
+        }
 
         if (!cart) {
             return res.status(404).json({ error: 'Cart not found' });
@@ -222,28 +257,36 @@ app.put('/carts/update/:productId', async (req, res) => {
         const existingItem = cart.items.find(item => item.productId === productId);
 
         if (existingItem) {
+            console.log("existingItem", existingItem);
             // Update fullPrice based on the change in quantity
-            cart.fullPrice += (quantity - existingItem.quantity) * product.price;
+            cart.fullPrice += (quantity - existingItem.quantity) * existingItem.price;
             cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
             existingItem.quantity = quantity;
-
+            console.log("cart", cart);
             await cart.save();
             res.status(200).json(cart);
         } else {
             res.status(404).json({ error: 'Product not found in the cart' });
         }
     } catch (error) {
+        console.log(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
-// Remove a product from the user's cart completely
+// Delete a product from the user's cart completely
 /**
  * @swagger
- * /cart/delete/{productId}:
- *   delete:
+ * /carts/{cartId}/delete/products/{productId}:
+ *   put:
  *     summary: Remove a product from the user's cart completely
  *     parameters:
+ *       - in: path
+ *         name: cartId
+ *         required: true
+ *         description: ID of the user's cart
+ *         schema:
+ *           type: string
  *       - in: path
  *         name: productId
  *         required: true
@@ -258,10 +301,10 @@ app.put('/carts/update/:productId', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.delete('/carts/delete/:productId', async (req, res) => {
+app.put('/carts/:cartId/delete/products/:productId', async (req, res) => {
     try {
-        const { productId } = req.params;
-        const cart = await Cart.findOne({ userId });
+        const { cartId, productId } = req.params;
+        const cart = await Cart.findOne({  _id: cartId  });
 
         if (!cart) {
             return res.status(404).json({ error: 'Cart not found' });
@@ -292,10 +335,16 @@ app.delete('/carts/delete/:productId', async (req, res) => {
 // Decrease the quantity of a product in the cart
 /**
  * @swagger
- * /cart/remove/{productId}:
- *   delete:
+ * /carts/{cartId}/remove/products/{productId}:
+ *   put:
  *     summary: Decrease the quantity of a product in the cart
  *     parameters:
+ *       - in: path
+ *         name: cartId
+ *         required: true
+ *         description: ID of the user's cart
+ *         schema:
+ *           type: string
  *       - in: path
  *         name: productId
  *         required: true
@@ -310,10 +359,10 @@ app.delete('/carts/delete/:productId', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.delete('/carts/remove/:productId', async (req, res) => {
+app.put('/carts/:cartId/remove/products/:productId', async (req, res) => {
     try {
-        const { productId } = req.params;
-        const cart = await Cart.findOne({ userId });
+        const { cartId, productId } = req.params;
+        const cart = await Cart.findOne({  _id: cartId  });
 
         if (!cart) {
             return res.status(404).json({ error: 'Cart not found' });
@@ -356,9 +405,16 @@ app.delete('/carts/remove/:productId', async (req, res) => {
 // Clear all items from the user's cart
 /**
  * @swagger
- * /cart/clear:
- *   delete:
+ * /carts/{cartId}/clear:
+ *   put:
  *     summary: Clear all items from the user's cart
+ *     parameters:
+ *       - in: path
+ *         name: cartId
+ *         required: true
+ *         description: ID of the user's cart
+ *         schema:
+ *           type: string
  *     responses:
  *       '200':
  *         description: Successful response with the cleared cart
@@ -367,9 +423,10 @@ app.delete('/carts/remove/:productId', async (req, res) => {
  *       '500':
  *         description: Internal Server Error
  */
-app.delete('/carts/clear', async (req, res) => {
+app.put('/carts/:cartId/clear', async (req, res) => {
     try {
-        const cart = await Cart.findOne({ userId });
+        const { cartId } = req.params;
+        const cart = await Cart.findOne({  _id: cartId  });
 
         if (!cart) {
             return res.status(404).json({ error: 'Cart not found' });
@@ -392,6 +449,13 @@ app.delete('/carts/clear', async (req, res) => {
  * /cart/delete:
  *   delete:
  *     summary: Delete the entire shopping cart.
+ *     parameters:
+ *       - in: path
+ *         name: cartId
+ *         required: true
+ *         description: ID of the user's cart to be deleted.
+ *         schema:
+ *           type: string
  *     responses:
  *       200:
  *         description: Successful response when the cart is deleted.
@@ -400,9 +464,10 @@ app.delete('/carts/clear', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-app.delete('/carts/delete', async (req, res) => {
+app.delete('/carts/:cartId', async (req, res) => {
     try {
-        const cart = await Cart.findOneAndDelete({ userId });
+        const { cartId } = req.params;
+        const cart = await Cart.findOneAndDelete({  _id: cartId  });
 
         if (!cart) {
             return res.status(404).json({ error: 'Cart not found' });
