@@ -50,6 +50,10 @@ app.get('/swagger.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.send(swaggerSpec);
 });
+app.get('/v3/api-docs', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Middleware to verify the JWT token
 const verifyToken = async (req, res, next) => {
