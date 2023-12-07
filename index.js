@@ -19,7 +19,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, { dbName: 'db_carts' });
+//mongoose.connect(process.env.MONGODB_URI, { dbName: 'db_carts' });
 
 const { getProductDetails } = productService;
 
@@ -487,6 +487,6 @@ app.delete('/carts/:cartId', async (req, res) => {
 });
 
 // Start the server
-app.listen(port, () => {
+module.exports = app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
