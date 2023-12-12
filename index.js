@@ -247,7 +247,6 @@ app.put('/carts/:cartId/products/:productId', async (req, res) => {
     try {
         const { cartId, productId } = req.params;
         const { quantity } = req.body;
-        console.log(req.body);
         const cart = await Cart.findOne({ _id: cartId });
 
         if(quantity < 1) {
@@ -268,12 +267,10 @@ app.put('/carts/:cartId/products/:productId', async (req, res) => {
         const existingItem = cart.items.find(item => item.productId === productId);
 
         if (existingItem) {
-            console.log("existingItem", existingItem);
             // Update fullPrice based on the change in quantity
             cart.fullPrice += (quantity - existingItem.quantity) * existingItem.price;
             cart.fullPrice = parseFloat(cart.fullPrice.toFixed(2));
             existingItem.quantity = quantity;
-            console.log("cart", cart);
             await cart.save();
             res.status(200).json(cart);
         } else {
@@ -457,7 +454,7 @@ app.put('/carts/:cartId/clear', async (req, res) => {
 // Delete the entire shopping cart
 /**
  * @swagger
- * /cart/delete:
+ * /carts/{cartId}:
  *   delete:
  *     summary: Delete the entire shopping cart.
  *     parameters:
