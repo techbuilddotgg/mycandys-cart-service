@@ -7,6 +7,8 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const cors = require('cors');
 const axios = require('axios');
+const uuid = require('uuid');
+const { setupRabbitMQ, getRabbitMQChannel } = require('./rabbitmq/rabbitmq');
 
 dotenv.config();
 
@@ -20,6 +22,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI, { dbName: 'db_carts' });
+
+// Set up RabbitMQ
+setupRabbitMQ();
 
 const { getProductDetails } = productService;
 
@@ -69,6 +74,34 @@ const verifyToken = async (req, res, next) => {
     }
     next();
 };
+
+// Middleware to log requests
+app.use((req, res, next) => {
+    next();
+
+    const correlationId = uuid.v4();
+    req.headers['X-Correlation-Id'] = correlationId;
+
+    res.on('finish', () => {
+        const { statusCode } = res;
+
+        const logMessage = {
+            timestamp: new Date().toISOString(),
+            correlationId,
+            url: req.protocol + '://' + req.get('host') + req.originalUrl,
+            message: `${req.method} - ${req.url}`,
+            service: 'cart',
+            type: statusCode >= 500 ? 'Error' : (statusCode >= 400 ? 'Warning' : 'Info'),
+        }
+
+        const logMessageJson = JSON.stringify(logMessage);
+        const rabbitMQChannel = getRabbitMQChannel();
+        if (rabbitMQChannel) {
+            rabbitMQChannel.publish(process.env.RABBITMQ_EXCHANGE, '', Buffer.from(logMessageJson));
+            console.log('Log message sent to RabbitMQ:', logMessageJson);
+        }
+    });
+});
 
 /**
  * @swagger
@@ -472,7 +505,7 @@ app.put('/carts/:cartId/clear', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-app.delete('/carts/:cartId', async (req, res) => {
+app.delete('/carts/:cartId', verifyToken, async (req, res) => {
     try {
         const { cartId } = req.params;
         const cart = await Cart.findOneAndDelete({  _id: cartId  });
