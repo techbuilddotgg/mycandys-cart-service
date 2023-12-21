@@ -76,11 +76,20 @@ const verifyToken = async (req, res, next) => {
 };
 
 // Middleware to log requests
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
     next();
 
     const correlationId = uuid.v4();
     req.headers['X-Correlation-Id'] = correlationId;
+
+    // Call the '/stats' endpoint
+    const calledService = `[${req.method}] - ${req.route.path}`;
+    try {
+        await axios.post(`${process.env.CARTS_ANALYTICS_SERVICE_URL}/stats`, { calledService });
+        console.log(`Successfully called /stats for ${calledService}`);
+    } catch (error) {
+        console.log(`Error calling /stats for ${calledService}: ${error.message}`);
+    }
 
     res.on('finish', () => {
         const { statusCode } = res;
