@@ -79,7 +79,9 @@ const verifyToken = async (req, res, next) => {
 app.use(async (req, res, next) => {
     next();
 
-    const correlationId = uuid.v4();
+    const existingCorrelationId = req.headers['X-Correlation-Id'];
+
+    const correlationId = existingCorrelationId || uuid.v4();
     req.headers['X-Correlation-Id'] = correlationId;
 
     // Call the '/stats' endpoint
